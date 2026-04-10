@@ -49,6 +49,7 @@ def cleanup_old_files():
                 expired_jobs = [
                     jid for jid, job in jobs.items()
                     if now - job.get("created_at", now) > FILE_TTL_SECONDS
+                    and job.get("status") != "downloading"
                 ]
                 for jid in expired_jobs:
                     jobs.pop(jid, None)
