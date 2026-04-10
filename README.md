@@ -50,6 +50,7 @@ so the build installs ffmpeg.
 
 > **Note:** Downloaded files are **ephemeral** on free PaaS tiers — they are lost on restart or redeploy.
 > All configuration is via environment variables with sensible defaults. See `.env.example` for the full list.
+> The app also auto-retries YouTube with a safer `web_embedded` client on bot-check errors; you can override this via `YOUTUBE_FALLBACK_ARGS`.
 
 ## Usage
 

@@ -2,7 +2,7 @@ import os
 import uuid
 import glob
 import json
-import re
+import shlex
 import subprocess
 import threading
 import time
@@ -19,6 +19,10 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 DOWNLOAD_DIR = os.path.join(os.path.dirname(__file__), "downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 COOKIES_FILE = os.path.join(os.path.dirname(__file__), "cookies.txt")
+YTDLP_EXTRA_ARGS = shlex.split(os.environ.get("YTDLP_EXTRA_ARGS", ""))
+YOUTUBE_FALLBACK_ARGS = shlex.split(
+    os.environ.get("YOUTUBE_FALLBACK_ARGS", "--extractor-args youtube:player_client=web_embedded")
+)
 
 FILE_TTL_SECONDS = int(os.environ.get("FILE_TTL_SECONDS", 1800))
 CLEANUP_INTERVAL_SECONDS = int(os.environ.get("CLEANUP_INTERVAL_SECONDS", 300))
@@ -83,7 +87,31 @@ def _ytdlp_base():
     cmd = ["yt-dlp", "--no-playlist"]
     if os.path.isfile(COOKIES_FILE):
         cmd += ["--cookies", COOKIES_FILE]
+    cmd += YTDLP_EXTRA_ARGS
     return cmd
+
+
+def _should_retry_with_fallback(stderr):
+    text = (stderr or "").lower()
+    return any(
+        phrase in text
+        for phrase in (
+            "sign in to confirm you're not a bot",
+            "sign in to confirm you’re not a bot",
+            "could not fetch video",
+            "the string did not match the expected pattern",
+            "login required",
+        )
+    )
+
+
+def _run_ytdlp(args, timeout):
+    cmd = _ytdlp_base() + list(args)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    if result.returncode != 0 and YOUTUBE_FALLBACK_ARGS and _should_retry_with_fallback(result.stderr):
+        fallback_cmd = _ytdlp_base() + YOUTUBE_FALLBACK_ARGS + list(args)
+        result = subprocess.run(fallback_cmd, capture_output=True, text=True, timeout=timeout)
+    return result
 
 
 def check_rate_limit():
@@ -110,7 +138,7 @@ def run_download(job_id, url, format_choice, format_id):
         url = clean_url(url)
         out_template = os.path.join(DOWNLOAD_DIR, f"{job_id}.%(ext)s")
 
-        cmd = _ytdlp_base() + ["-o", out_template]
+        cmd = ["-o", out_template]
 
         if format_choice == "audio":
             cmd += ["-x", "--audio-format", "mp3"]
@@ -122,7 +150,7 @@ def run_download(job_id, url, format_choice, format_id):
         cmd.append(url)
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            result = _run_ytdlp(cmd, timeout=300)
             if result.returncode != 0:
                 with jobs_lock:
                     jobs[job_id]["status"] = "error"
@@ -199,9 +227,9 @@ def get_info():
         return jsonify({"error": "URL too long"}), 400
 
     url = clean_url(url)
-    cmd = _ytdlp_base() + ["-j", url]
+    cmd = ["-j", url]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        result = _run_ytdlp(cmd, timeout=60)
         if result.returncode != 0:
             return jsonify({"error": result.stderr.strip().split("\n")[-1]}), 400
 
