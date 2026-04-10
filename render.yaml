@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: reclip
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 360
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.0"
+      - key: FILE_TTL_SECONDS
+        value: "1800"
+      - key: CLEANUP_INTERVAL_SECONDS
+        value: "300"
+      - key: RATE_LIMIT
+        value: "30"
+      - key: RATE_WINDOW
+        value: "60"
+      - key: MAX_CONCURRENT_DOWNLOADS
+        value: "4"
