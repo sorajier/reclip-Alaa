@@ -36,6 +36,22 @@ Or with Docker:
 docker build -t reclip . && docker run -p 8899:8899 reclip
 ```
 
+## Deployment
+
+**Render (recommended)** — A `render.yaml` blueprint is included:
+1. Fork this repo → Render dashboard → **New → Blueprint** → connect your fork → **Apply**
+2. The free-tier web service starts automatically with gunicorn.
+
+**Render (manual):** Create a new **Web Service**, set build command to `pip install -r requirements.txt`
+and start command to `gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 360`.
+
+**Railway:** Push to Railway with the included `Procfile`. Set the env var `NIXPACKS_PKGS=ffmpeg`
+so the build installs ffmpeg.
+
+> **Note:** Downloaded files are **ephemeral** on free PaaS tiers — they are lost on restart or redeploy.
+> All configuration is via environment variables with sensible defaults. See `.env.example` for the full list.
+> The app also auto-retries YouTube with a safer `web_embedded` client on bot-check errors; you can override this via `YOUTUBE_FALLBACK_ARGS`.
+
 ## Usage
 
 1. Paste one or more video URLs into the input box
