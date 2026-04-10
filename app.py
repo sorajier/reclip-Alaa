@@ -2,10 +2,12 @@ import os
 import uuid
 import glob
 import json
+import re
 import subprocess
 import threading
 import time
 from collections import defaultdict
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 from flask import Flask, request, jsonify, send_file, render_template
 from werkzeug.exceptions import HTTPException
@@ -16,6 +18,7 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 DOWNLOAD_DIR = os.path.join(os.path.dirname(__file__), "downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+COOKIES_FILE = os.path.join(os.path.dirname(__file__), "cookies.txt")
 
 FILE_TTL_SECONDS = int(os.environ.get("FILE_TTL_SECONDS", 1800))
 CLEANUP_INTERVAL_SECONDS = int(os.environ.get("CLEANUP_INTERVAL_SECONDS", 300))
@@ -62,6 +65,27 @@ _cleanup_thread = threading.Thread(target=cleanup_old_files, daemon=True)
 _cleanup_thread.start()
 
 
+def clean_url(url):
+    """Strip tracking parameters from YouTube URLs."""
+    parsed = urlparse(url)
+    if parsed.hostname in ("youtu.be", "www.youtube.com", "youtube.com", "m.youtube.com"):
+        params = parse_qs(parsed.query)
+        tracking = {"si", "feature", "utm_source", "utm_medium", "utm_campaign",
+                    "utm_content", "utm_term", "pp", "cbrd", "ucbcb"}
+        cleaned = {k: v for k, v in params.items() if k not in tracking}
+        new_query = urlencode(cleaned, doseq=True)
+        return urlunparse(parsed._replace(query=new_query))
+    return url
+
+
+def _ytdlp_base():
+    """Build base yt-dlp command, with cookies if available."""
+    cmd = ["yt-dlp", "--no-playlist"]
+    if os.path.isfile(COOKIES_FILE):
+        cmd += ["--cookies", COOKIES_FILE]
+    return cmd
+
+
 def check_rate_limit():
     """Returns True if request should be allowed, False if rate limited."""
     ip = request.remote_addr or "unknown"
@@ -83,9 +107,10 @@ def run_download(job_id, url, format_choice, format_id):
         return
 
     try:
+        url = clean_url(url)
         out_template = os.path.join(DOWNLOAD_DIR, f"{job_id}.%(ext)s")
 
-        cmd = ["yt-dlp", "--no-playlist", "-o", out_template]
+        cmd = _ytdlp_base() + ["-o", out_template]
 
         if format_choice == "audio":
             cmd += ["-x", "--audio-format", "mp3"]
@@ -173,7 +198,8 @@ def get_info():
     if len(url) > 2048:
         return jsonify({"error": "URL too long"}), 400
 
-    cmd = ["yt-dlp", "--no-playlist", "-j", url]
+    url = clean_url(url)
+    cmd = _ytdlp_base() + ["-j", url]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if result.returncode != 0:

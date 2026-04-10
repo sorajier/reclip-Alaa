@@ -442,6 +442,8 @@
       if (err.includes('HTTP Error 404')) return 'Video not found';
       if (err.includes('copyright')) return 'Video blocked due to copyright';
       if (err.includes('geo')) return 'Video not available in your region';
+      if (err.includes('Sign in to confirm') || err.includes('not a bot')) return 'YouTube is blocking this server — try adding cookies.txt';
+      if (err.includes('did not match the expected pattern')) return 'URL format not recognized — try the full URL from the address bar';
       if (err.includes('timed out') || err.includes('Timed out')) return 'Request timed out — try again';
       if (err.includes('network') || err.includes('Network')) return 'Network error — check your connection';
       return err.length > 80 ? err.slice(0, 80) + '...' : err;
